@@ -1,0 +1,19 @@
+# RawRead
+# initially created by Martin Matysiak (mail@martin-matysiak.de)
+
+RawRead is a tool for creating, reading and erasing NoFS-formatted memory cards. 
+NoFS (short for "No FileSystem") was invented to use it as an extremely 
+lightweight file system for a GPS logging device that I've made. As the device 
+operates with a small microcontroller, libraries for handling FAT or similar 
+filesystems just didn't fit into the controller firmware. Sadly, reading memory 
+cards without a proper filesystem on the computer is not that easy, because of 
+this, RawRead had to be made. It takes care of detecting the right device and 
+processing the contents in the right way. 
+
+The tool is completely operated via command line arguments. See "./rawread.py -h" 
+for details. An example usage could be:
+
+./rawread.py -o data.txt
+
+This will create the file "data.txt" in the current directory containing all the 
+data read from the memory card.  
