@@ -237,9 +237,18 @@ def main():
     eof = False
     sectors_read = 0
     
+    # read the first few bytes so that the nofs header won't get
+    # into the output file. seek() won't work on windows, that's
+    # why I use read()
+    if valid_nofs:
+        input_handle.read(len(NOFS_HEAD))
+    
     while not eof:
         sector = input_handle.read(NOFS_SECTOR_SIZE)        
         eof = (len(sector) != NOFS_SECTOR_SIZE) or (NOFS_TERMINAL in sector)
+        # ignore everything after and including NOFS_TERMINAL
+        if NOFS_TERMINAL in sector:
+            sector = sector[:sector.find(NOFS_TERMINAL)]
         output_handle.write(sector)
         sectors_read += 1
     
