@@ -48,11 +48,11 @@ def initialize_nofs(device_handle):
     # open the device with writing permissions, write the header and erase
     # the rest of the first sector
     try:
-        erase_sectors(device_handle, 1)
+        erase_sectors(device_handle, 2)
         device_handle.seek(0)
         first_sector = NOFS_HEAD
         first_sector += NOFS_TERMINAL
-        first_sector += (NOFS_SECTOR_SIZE - len(NOFS_HEAD) - len(NOFS_TERMINAL)) * chr(0)
+        first_sector += (NOFS_SECTOR_SIZE - len(NOFS_HEAD) - len(NOFS_TERMINAL)) * chr(0xFF)
         device_handle.write(first_sector)
         device_handle.flush()
     except IOError as ex:
@@ -63,7 +63,7 @@ def erase_sectors(device_handle, sector_count = None):
     eof = False
     while not eof:
         try:
-            device_handle.write(NOFS_SECTOR_SIZE * chr(0))
+            device_handle.write(NOFS_SECTOR_SIZE * chr(0xFF))
             if sector_count != None:
                 sector_count -= 1
                 eof = sector_count == 0
