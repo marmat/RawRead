@@ -136,25 +136,31 @@ def main():
     # check arguments
     parser = OptionParser(version="\nRawRead %s\n  by Martin Matysiak\
                           \n  www.martin-matysiak.de\n" % VERSION)
-    parser.add_option("-i", "--input", dest="input_device",
-                      help="read data from INPUT. if not set, device will be \
-                      determined automatically", metavar="INPUT")
+    parser.add_option("-i", "--input", dest="input_device", help="read data "
+                      "from the device located at INPUT. if not set, rawread "
+                      "will try to determine the device automatically", 
+                      metavar="INPUT")
     parser.add_option("-c", "--create", action="store_true", dest="create_disk",
-                      default=False, help="initialize a device by creating a NoFS \
-                      on it")
+                      default=False, help="initialize a device by creating a "
+                      "NoFS on it")
     parser.add_option("-e", "--erase", action="store_true", dest="erase_disk",
-                      default=False, help="erase disk after reading out. will only \
-                      be performed if device contains valid NoFS or -f is set.")
+                      default=False, help="erase disk. will only be performed "
+                      "if device contains valid NoFS or -f is set. If used in "
+                      "combination with -o, the device will be read out first "
+                      "and erased afterwards")
     parser.add_option("-E", "--full-erase", action="store_true", dest="full_erase",
-                      default=False, help="disk will be completely overwritten \
-                      with NULL bytes after reading out. May take a long time \
-                      depending on the size of INPUT. will only be performed \
-                      if device contains valid NoFS or -f is set.")
+                      default=False, help="disk will be completely overwritten. "
+                      "May take a long time depending on the size of the device "
+                      "specified by INPUT. will only be performed if device "
+                      "contains valid NoFS or -f is set. If used in combination "
+                      "with -o, the device will be read out first and erased "
+                      "afterwards.")
     parser.add_option("-f", "--force", action="store_true", dest="force",
-                      default=False, help="force actions, no matter if the input \
-                      device contains a NoFS or not. DANGEROUS!")
+                      default=False, help="force actions, no matter if the "
+                      "input device contains a NoFS or not. DANGEROUS!")
     parser.add_option("-o", "--output", dest="output_file",
-                      help="write data to OUTPUT. defaults to stdout", 
+                      help="write data to OUTPUT. defaults to stdout or none "
+                      "if -c, -e or -E is set.", 
                       metavar="OUTPUT")
 
     (options, args) = parser.parse_args()
