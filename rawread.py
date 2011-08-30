@@ -7,16 +7,15 @@ RawReader
 by Martin Matysiak
   mail@martin-matysiak.de
   www.martin-matysiak.de
-
-Version 2.0
 """
 
+__version__ = "2.0"
+
 import sys
+import os
 from optparse import OptionParser
 
 # some pseudoconstant values
-VERSION = "2.0"
-
 # the header which identifies a nofs
 NOFS_HEAD = "k621.de"
 
@@ -28,6 +27,70 @@ NOFS_SECTOR_SIZE = 512
 
 # the maximum amount of devices that should be scanned (starting from ..0/..a)
 MAX_DEVICES = 16
+
+# a more object-oriented approach to the problem
+class Device:
+    """A class representing an input device"""
+    
+    valid_nofs = False
+    sectors_read = None
+    
+    _force_operations = False
+    _device_handle = None
+    
+    def __init__(self, path, force = False, permissions = "r"):
+        """Class constructor. 
+        
+        Parameters:
+        path - the path at which the device or input file is located
+        permissions - the permissions which shall be used when accessing 
+        the device. See the python file-object for possible options.
+        force - If specified, erase operations _will_ perform writing
+        operations, even if no valid NoFS is detected.
+        
+        May throw exceptions in the following cases:
+        *tbd*
+        
+        """
+        pass
+    
+    def get_contents():
+        """Returns the contents of the device or file until either
+        
+        * 0x03 is read on valid NoFS device
+        * 0x00 or 0xFF is read on a non-NoFS device
+        * EOF is reached
+        
+        Simultaneously, stores the number of read sectors in the
+        public attribute 'sectors_read'.
+        
+        """
+        pass
+        
+    def erase(complete = False):
+        """Erases the device or file.
+        
+        Parameters:
+        complete - If set, the whole file will be overwritten with 0xFF,
+        otherwise only until the first occurence of NOFS_TERMINAL
+
+        Returns True if erase procedure succeeded, otherwise False (e.g. if 
+        no valid NoFS was detected and force set to False). No writing 
+        writing operations have been performed if this method returns False!
+        
+        """
+        pass
+        
+    def initialize_nofs():
+        """Initializes a NoFS on the given device or file.
+        
+        Will only work if the device object has been initialized with force
+        set to True.
+        
+        Returns true if initialization succeeded, otherwise False.
+        
+        """
+        pass
 
 # returns a list of possible device names, depending on the running os
 def get_possible_devices():
