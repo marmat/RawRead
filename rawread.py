@@ -48,13 +48,11 @@ class Device:
         force - If specified, erase operations _will_ perform writing
         operations, even if no valid NoFS is detected.
         
-        May throw exceptions in the following cases:
-        *tbd*
-        
+        May throw IOError if the device doesn't exist or can't be accessed
         """
         # check if the device exists at all
         if not os.path.exists(path):
-            raise Exception("Given device doesn't exist")
+            raise IOError("Given device doesn't exist")
         
         # try to access the device with the given permissions
         self._device_handle = file(path, permissions)
@@ -63,6 +61,7 @@ class Device:
         self.valid_nofs = self._device_handle.read(len(NOFS_HEAD)) == NOFS_HEAD
         self._device_handle.seek(0)
         
+        # remember parameters
         self._force_operations = force
     
     def get_contents(self):
@@ -90,7 +89,15 @@ class Device:
         writing operations have been performed if this method returns False!
         
         """
-        pass
+        if self.valid_nofs or self._force_operations:
+            # If only a partial erase is wished and the count of sectors
+            # hasn't been determined, sweep through the contents
+            if self.sector_count == None and not complete:
+                self.get_contents()
+                
+            return self._erase_sectors(self.sector_count if not complete else -1)
+        else:
+            return False
         
     def initialize_nofs(self):
         """Initializes a NoFS on the given device or file.
@@ -105,7 +112,7 @@ class Device:
             return False
         else:
             # erase the first few sectors
-            self._erase_sectors(5)
+            self._erase_sectors(4,1)
             
             # write the nofs header into the first sector
             self._device_handle.seek(0)
@@ -119,14 +126,32 @@ class Device:
             self._device_handle.write(first_sector)
             self._device_handle.flush()
 
-    def _erase_sectors(self, count = 0):
+    def _erase_sectors(self, count = 0, start = 0):
         """Internal method for erasing a specific count of sectors on
         the device.
         
         Paramters:
-        count - The number of sectors to be removed
+        count - The number of sectors to be removed. When set to -1, all
+        sectors until EOF will be removed
+        start - The sector from which erasing should be started
+        
+        returns True if everything went fine, False otherwise
         """"
-        pass
+        self._device_handle.seek(start * NOFS_SECTOR_SIZE)
+        eof = False
+        
+        while not eof:
+            try:    
+                self._device_handle.write(chr(0xFF) * NOFS_SECTOR_SIZE)
+                if count >= 0:
+                    count -= 1
+                    eof = count == 0
+            except IOError:
+                eof = True
+        
+        # If we got an exception before count was less than or equal zero,
+        # something went wrong
+        return count <= 0
 
 # returns a list of possible device names, depending on the running os
 def get_possible_devices():
