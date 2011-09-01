@@ -136,7 +136,7 @@ class Device:
         start - The sector from which erasing should be started
         
         returns True if everything went fine, False otherwise
-        """"
+        """
         self._device_handle.seek(start * NOFS_SECTOR_SIZE)
         eof = False
         
@@ -346,7 +346,7 @@ def main():
         valid_nofs = True
 
     try:
-        input_handle = open(device, "rb+")
+        input_handle = open(device, "rb+" if options.erase_disk or options.full_erase else "rb")
         if not valid_nofs:
             # quick check if valid nofs is given
             valid_nofs = input_handle.read(len(NOFS_HEAD)) == NOFS_HEAD
