@@ -52,9 +52,20 @@ class Device:
         *tbd*
         
         """
-        pass
+        # check if the device exists at all
+        if not os.path.exists(path):
+            raise Exception("Given device doesn't exist")
+        
+        # try to access the device with the given permissions
+        self._device_handle = file(path, permissions)
+        
+        # read the first few bytes to assure there is a nofs on it
+        self.valid_nofs = self._device_handle.read(len(NOFS_HEAD)) == NOFS_HEAD
+        self._device_handle.seek(0)
+        
+        self._force_operations = force
     
-    def get_contents():
+    def get_contents(self):
         """Returns the contents of the device or file until either
         
         * 0x03 is read on valid NoFS device
@@ -65,9 +76,9 @@ class Device:
         public attribute 'sectors_read'.
         
         """
-        pass
+        self.sectors_read = 0
         
-    def erase(complete = False):
+    def erase(self, complete = False):
         """Erases the device or file.
         
         Parameters:
@@ -81,15 +92,40 @@ class Device:
         """
         pass
         
-    def initialize_nofs():
+    def initialize_nofs(self):
         """Initializes a NoFS on the given device or file.
         
         Will only work if the device object has been initialized with force
-        set to True.
+        set to True and the device hasn't been initialized already.
         
         Returns true if initialization succeeded, otherwise False.
         
         """
+        if self.valid_nofs or not self._force_operations:
+            return False
+        else:
+            # erase the first few sectors
+            self._erase_sectors(5)
+            
+            # write the nofs header into the first sector
+            self._device_handle.seek(0)
+            
+            # remember: we can only write a whole sector at a time
+            first_sector = NOFS_HEAD
+            first_sector += NOFS_TERMINAL
+            first_sector += (NOFS_SECTOR_SIZE - len(NOFS_HEAD) - len(NOFS_TERMINAL)) * chr(0xFF)
+            
+            # write it onto the device
+            self._device_handle.write(first_sector)
+            self._device_handle.flush()
+
+    def _erase_sectors(self, count = 0):
+        """Internal method for erasing a specific count of sectors on
+        the device.
+        
+        Paramters:
+        count - The number of sectors to be removed
+        """"
         pass
 
 # returns a list of possible device names, depending on the running os
@@ -198,7 +234,7 @@ def get_nofs_device():
 def main():
     # check arguments
     parser = OptionParser(version="\nRawRead %s\n  by Martin Matysiak\
-                          \n  www.martin-matysiak.de\n" % VERSION)
+                          \n  www.martin-matysiak.de\n" % __version__)
     parser.add_option("-i", "--input", dest="input_device", help="read data "
                       "from the device located at INPUT. if not set, rawread "
                       "will try to determine the device automatically", 
