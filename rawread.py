@@ -65,7 +65,13 @@ class Device:
         self._device_handle.seek(0)
         
         # remember parameters
-        self._force_operations = force      
+        self._force_operations = force   
+    
+    def __del__(self):
+        """Class destructor. Closes the file handle on the device if it
+        was opened"""
+        if self._device_handle != None:
+            self._device_handle.close()   
     
     def get_contents(self):
         """Returns the contents of the device or file until either
@@ -84,17 +90,17 @@ class Device:
         # If we have a valid NoFS, ignore the first few bytes so that
         # they don't show up in the returned content
         # Furthermore, set up which symbols will end the content getting
-        terminal = 0x00
+        terminal = chr(0x00)
         if self.valid_nofs:
             self._device_handle.read(len(NOFS_HEADER))
-            terminals = NOFS_TERMINAL
+            terminal = NOFS_TERMINAL
         
         # Start reading
         eof = False
         result = ""
         while not eof:
             try:
-                sector = input_handle.read(NOFS_SECTOR_SIZE)
+                sector = self._device_handle.read(NOFS_SECTOR_SIZE)
             except IOError:
                 eof = True
                 break
@@ -122,15 +128,20 @@ class Device:
         writing operations have been performed if this method returns False!
         
         """
-        if self.valid_nofs or self._force_operations:
-            # If only a partial erase is wished and the count of sectors
-            # hasn't been determined, sweep through the contents
-            if self.sectors_read == None and not complete:
-                self.get_contents()
-                
-            return self._erase_sectors(self.sectors_read if not complete else -1)
-        else:
+        if not (self.valid_nofs or self._force_operations):
             return False
+
+        # If only a partial erase is wished and the count of sectors
+        # hasn't been determined, sweep through the contents
+        if self.sectors_read == None and not complete:
+            self.get_contents()
+            
+        result = self._erase_sectors(self.sectors_read if not complete else -1)
+
+        if result and self.valid_nofs:
+            self._write_header()
+        
+        return result
         
     def initialize_nofs(self):
         """Initializes a NoFS on the given device or file.
@@ -143,22 +154,27 @@ class Device:
         """
         if self.valid_nofs or not self._force_operations:
             return False
-        else:
-            # erase the first few sectors
-            self._erase_sectors(4,1)
-            
-            # write the nofs header into the first sector
-            self._device_handle.seek(0)
-            
-            # remember: we can only write a whole sector at a time
-            first_sector = NOFS_HEADER
-            first_sector += NOFS_TERMINAL
-            first_sector += (NOFS_SECTOR_SIZE - len(NOFS_HEADER) - len(NOFS_TERMINAL)) * chr(0xFF)
-            
-            # write it onto the device
-            self._device_handle.write(first_sector)
-            self._device_handle.flush()
+        
+        # erase the first few sectors and write header
+        self._erase_sectors(4,1)
+        self._write_header()
+        return True
+    
+    def _write_header(self):
+        """Internal method which writes the NOFS_HEADER into the very
+        first sector"""
+        self._device_handle.seek(0)
 
+        # remember: we can only write a whole sector at a time
+        first_sector = NOFS_HEADER
+        first_sector += NOFS_TERMINAL
+        first_sector += (NOFS_SECTOR_SIZE - len(NOFS_HEADER) - len(NOFS_TERMINAL)) * chr(0xFF)
+        
+        # write it onto the device
+        self._device_handle.write(first_sector)
+        self._device_handle.flush()
+
+    
     def _erase_sectors(self, count = 0, start = 0):
         """Internal method for erasing a specific count of sectors on
         the device. A sector is called erased when the very first byte
@@ -204,39 +220,6 @@ def get_possible_devices():
             possible_devices.append("/dev/disk%d" % (i+1))
 
     return possible_devices
-
-def initialize_nofs(device_handle):
-    # open the device with writing permissions, write the header and erase
-    # the rest of the first sector
-    try:
-        erase_sectors(device_handle, 2)
-        device_handle.seek(0)
-        first_sector = NOFS_SIGNATURE
-        first_sector += "\0\0\0\0" # last scanning position (since gLogger V1.5)
-        first_sector += NOFS_TERMINAL
-        first_sector += (NOFS_SECTOR_SIZE - len(NOFS_SIGNATURE) - 4 - len(NOFS_TERMINAL)) * chr(0xFF)
-        device_handle.write(first_sector)
-
-        device_handle.seek(NOFS_SECTOR_SIZE)
-        second_sector = NOFS_TERMINAL
-        second_sector += (NOFS_SECTOR_SIZE - 1) * chr(0xFF)
-        device_handle.write(second_sector)
-        
-        device_handle.flush()
-    except IOError as ex:
-        print "\nERROR: Device could not be initialized. Details: %s\n" % str(ex)
-
-def erase_sectors(device_handle, sector_count = None):
-    device_handle.seek(0)
-    eof = False
-    while not eof:
-        try:
-            device_handle.write(NOFS_SECTOR_SIZE * chr(0xFF))
-            if sector_count != None:
-                sector_count -= 1
-                eof = sector_count == 0
-        except IOError:
-            eof = True
 
 def get_removable_devices(opts):
     # detect the correct device by letting the user eject and insert the device
@@ -287,11 +270,7 @@ def get_nofs_device():
     # scan through possible devices and check for nofs header
     for device in get_possible_devices():
         try:
-            handle = open(device, "r")
-            if (handle.read(len(NOFS_SIGNATURE)) == NOFS_SIGNATURE):
-                handle.close()
-                return device
-            handle.close()
+            dev = Device(device)
         except IOError:
             pass
     
@@ -369,10 +348,10 @@ def main():
         else:
             # create a nofs on the device
             print "> Initializing NoFS on %s..." % devices[0]
-            handle = open(devices[0], "rb+")
-            initialize_nofs(handle)
-            handle.close()
-            print "> Device initialized successfully!"
+            if (Device(devices[0], True, "rb+").initialize_nofs()):
+                print "> Device initialized successfully!"    
+            else:
+                print "> Device initialization failed!"            
         
         sys.exit(0)
 
@@ -381,64 +360,52 @@ def main():
     # select input device
     input_handle = None
     device = None
+    permissions = "rb+" if options.erase_disk or options.full_erase else "rb"
     valid_nofs = False
 
     if options.input_device:
-        device = options.input_device
+        device = Device(options.input_device, options.force, permissions)
     else:
-        device = get_nofs_device()
-        valid_nofs = True
+        # search for a nofs device
+        for device_path in get_possible_devices():
+            try:
+                device = Device(device_path, options.force, permissions)
+            except IOError:
+                pass
 
-    try:
-        input_handle = open(device, "rb+" if options.erase_disk or options.full_erase else "rb")
-        if not valid_nofs:
-            # quick check if valid nofs is given
-            valid_nofs = input_handle.read(len(NOFS_SIGNATURE)) == NOFS_SIGNATURE
-            input_handle.seek(0)
-    except IOError:
-        parser.error("INPUT could not be read (root permissions may be necessary)")
-        sys.exit(3)
+            if device.valid_nofs:
+                break
+        
+        if not device.valid_nofs:        
+            print "ERROR: No valid NoFS device found"
+            sys.exit(0)
 
-    # read input device and write to output
+    # read input device
+    device_contents = device.get_contents()
+
+    # open output stream
     output_handle = None
 
     if options.output_file:
         output_handle = open(options.output_file, "wb")
     else:
         output_handle = sys.stdout
-        
-    # -> read sector after sector and check for NOFS_TERMINAL
-    eof = False
-    sectors_read = 0
-    
-    # read the first few bytes so that the nofs header won't get
-    # into the output file. seek() won't work on windows, that's
-    # why I use read()
-    if valid_nofs:
-        input_handle.read(len(NOFS_SIGNATURE))
-    
-    while not eof:
-        sector = input_handle.read(NOFS_SECTOR_SIZE)        
-        eof = (len(sector) != NOFS_SECTOR_SIZE) or (NOFS_TERMINAL in sector)
-        # ignore everything after and including NOFS_TERMINAL
-        if NOFS_TERMINAL in sector:
-            sector = sector[:sector.find(NOFS_TERMINAL)]
-        output_handle.write(sector)
-        sectors_read += 1
-    
+
+    # check if it should be erased
+    if options.erase_disk or options.full_erase:
+        if not device.erase(options.full_erase):
+            print "ERROR: Couldn't erase device"
+        # if device-erase has been set, write only if output is not stdout
+        if options.output_file:
+            output_handle.write(device_contents)
+    else:
+        output_handle.write(device_contents)
+
     # check if output file was given, otherwise stdout would be closed
     if options.output_file:
         output_handle.close()
 
-    # erase input device (if set)
-    if options.erase_disk or options.full_erase:
-        if (valid_nofs or options.force):    
-            erase_sectors(input_handle, sectors_read if options.erase_disk else None)
-            initialize_nofs(input_handle)
-        else:
-            print "\nERROR: Can't erase device. Override with -f (careful!)\n"
-    
-    input_handle.close()
+    del device
 
 if __name__=='__main__':
   main()
