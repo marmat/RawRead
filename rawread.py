@@ -9,15 +9,18 @@ by Martin Matysiak
   www.martin-matysiak.de
 """
 
-__version__ = "2.0"
+__version__ = "2.1"
 
 import sys
 import os
 from optparse import OptionParser
 
 # some pseudoconstant values
-# the header which identifies a nofs
-NOFS_HEAD = "k621.de"
+# the part of the header which identifies a nofs
+NOFS_SIGNATURE = "k621.de"
+
+# the full filesystem header
+NOFS_HEADER = NOFS_SIGNATURE + "\0\0\0\0"
 
 # the terminal symbol which identifies the end of a nofs
 NOFS_TERMINAL = chr(0x03)
@@ -58,11 +61,11 @@ class Device:
         self._device_handle = file(path, permissions)
         
         # read the first few bytes to assure there is a nofs on it
-        self.valid_nofs = self._device_handle.read(len(NOFS_HEAD)) == NOFS_HEAD
+        self.valid_nofs = self._device_handle.read(len(NOFS_SIGNATURE)) == NOFS_SIGNATURE
         self._device_handle.seek(0)
         
         # remember parameters
-        self._force_operations = force
+        self._force_operations = force      
     
     def get_contents(self):
         """Returns the contents of the device or file until either
@@ -75,14 +78,44 @@ class Device:
         public attribute 'sectors_read'.
         
         """
+        self._device_handle.seek(0)
         self.sectors_read = 0
+
+        # If we have a valid NoFS, ignore the first few bytes so that
+        # they don't show up in the returned content
+        # Furthermore, set up which symbols will end the content getting
+        terminal = 0x00
+        if self.valid_nofs:
+            self._device_handle.read(len(NOFS_HEADER))
+            terminals = NOFS_TERMINAL
+        
+        # Start reading
+        eof = False
+        result = ""
+        while not eof:
+            try:
+                sector = input_handle.read(NOFS_SECTOR_SIZE)
+            except IOError:
+                eof = True
+                break
+
+            eof = (len(sector) != NOFS_SECTOR_SIZE) or (terminal in sector)
+            # Ignore everything after and including terminal
+            if terminal in sector:
+                sector = sector[:sector.find(terminal)]
+            
+            result += sector
+            self.sectors_read += 1
+        
+        return result
+
         
     def erase(self, complete = False):
         """Erases the device or file.
         
         Parameters:
-        complete - If set, the whole file will be overwritten with 0xFF,
-        otherwise only until the first occurence of NOFS_TERMINAL
+        complete - If set, the whole file will be overwritten with empty
+        sectors, otherwise only until the first occurence of NOFS_TERMINAL
 
         Returns True if erase procedure succeeded, otherwise False (e.g. if 
         no valid NoFS was detected and force set to False). No writing 
@@ -92,10 +125,10 @@ class Device:
         if self.valid_nofs or self._force_operations:
             # If only a partial erase is wished and the count of sectors
             # hasn't been determined, sweep through the contents
-            if self.sector_count == None and not complete:
+            if self.sectors_read == None and not complete:
                 self.get_contents()
                 
-            return self._erase_sectors(self.sector_count if not complete else -1)
+            return self._erase_sectors(self.sectors_read if not complete else -1)
         else:
             return False
         
@@ -118,9 +151,9 @@ class Device:
             self._device_handle.seek(0)
             
             # remember: we can only write a whole sector at a time
-            first_sector = NOFS_HEAD
+            first_sector = NOFS_HEADER
             first_sector += NOFS_TERMINAL
-            first_sector += (NOFS_SECTOR_SIZE - len(NOFS_HEAD) - len(NOFS_TERMINAL)) * chr(0xFF)
+            first_sector += (NOFS_SECTOR_SIZE - len(NOFS_HEADER) - len(NOFS_TERMINAL)) * chr(0xFF)
             
             # write it onto the device
             self._device_handle.write(first_sector)
@@ -128,7 +161,10 @@ class Device:
 
     def _erase_sectors(self, count = 0, start = 0):
         """Internal method for erasing a specific count of sectors on
-        the device.
+        the device. A sector is called erased when the very first byte
+        is a NOFS_TERMINAL and the rest 0xFF. The NOFS_TERMINAL serves
+        the purpose that, if the device should somehow not be able to
+        write a terminal, it'll still find another one.
         
         Paramters:
         count - The number of sectors to be removed. When set to -1, all
@@ -142,7 +178,8 @@ class Device:
         
         while not eof:
             try:    
-                self._device_handle.write(chr(0xFF) * NOFS_SECTOR_SIZE)
+                self._device_handle.write(NOFS_TERMINAL)
+                self._device_handle.write(chr(0xFF) * (NOFS_SECTOR_SIZE - 1))
                 if count >= 0:
                     count -= 1
                     eof = count == 0
@@ -174,10 +211,17 @@ def initialize_nofs(device_handle):
     try:
         erase_sectors(device_handle, 2)
         device_handle.seek(0)
-        first_sector = NOFS_HEAD
+        first_sector = NOFS_SIGNATURE
+        first_sector += "\0\0\0\0" # last scanning position (since gLogger V1.5)
         first_sector += NOFS_TERMINAL
-        first_sector += (NOFS_SECTOR_SIZE - len(NOFS_HEAD) - len(NOFS_TERMINAL)) * chr(0xFF)
+        first_sector += (NOFS_SECTOR_SIZE - len(NOFS_SIGNATURE) - 4 - len(NOFS_TERMINAL)) * chr(0xFF)
         device_handle.write(first_sector)
+
+        device_handle.seek(NOFS_SECTOR_SIZE)
+        second_sector = NOFS_TERMINAL
+        second_sector += (NOFS_SECTOR_SIZE - 1) * chr(0xFF)
+        device_handle.write(second_sector)
+        
         device_handle.flush()
     except IOError as ex:
         print "\nERROR: Device could not be initialized. Details: %s\n" % str(ex)
@@ -244,7 +288,7 @@ def get_nofs_device():
     for device in get_possible_devices():
         try:
             handle = open(device, "r")
-            if (handle.read(len(NOFS_HEAD)) == NOFS_HEAD):
+            if (handle.read(len(NOFS_SIGNATURE)) == NOFS_SIGNATURE):
                 handle.close()
                 return device
             handle.close()
@@ -349,7 +393,7 @@ def main():
         input_handle = open(device, "rb+" if options.erase_disk or options.full_erase else "rb")
         if not valid_nofs:
             # quick check if valid nofs is given
-            valid_nofs = input_handle.read(len(NOFS_HEAD)) == NOFS_HEAD
+            valid_nofs = input_handle.read(len(NOFS_SIGNATURE)) == NOFS_SIGNATURE
             input_handle.seek(0)
     except IOError:
         parser.error("INPUT could not be read (root permissions may be necessary)")
@@ -371,7 +415,7 @@ def main():
     # into the output file. seek() won't work on windows, that's
     # why I use read()
     if valid_nofs:
-        input_handle.read(len(NOFS_HEAD))
+        input_handle.read(len(NOFS_SIGNATURE))
     
     while not eof:
         sector = input_handle.read(NOFS_SECTOR_SIZE)        
@@ -396,4 +440,5 @@ def main():
     
     input_handle.close()
 
-main()
+if __name__=='__main__':
+  main()
