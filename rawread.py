@@ -9,7 +9,7 @@ by Martin Matysiak
   www.martin-matysiak.de
 """
 
-__version__ = "2.1"
+__version__ = "2.2a1"
 
 import sys
 import os
@@ -152,7 +152,11 @@ class Device:
         Returns true if initialization succeeded, otherwise False.
         
         """
-        if self.valid_nofs or not self._force_operations:
+        if self.valid_nofs:
+            print "ERROR: the device already contains a valid NoFS. Initialization aborted"
+            return False
+
+        if not self._force_operations:
             return False
         
         # erase the first few sectors and write header
@@ -370,13 +374,15 @@ def main():
         for device_path in get_possible_devices():
             try:
                 device = Device(device_path, options.force, permissions)
-            except IOError:
-                pass
+            except IOError as ex:
+                # ignore this device and turn to the next one
+                print "WARNING (%s): %s" % (device_path, str(ex))
+                continue
 
             if device.valid_nofs:
                 break
         
-        if not device.valid_nofs:        
+        if device == None or not device.valid_nofs:        
             print "ERROR: No valid NoFS device found"
             sys.exit(0)
 
