@@ -9,7 +9,7 @@ by Martin Matysiak
   www.martin-matysiak.de
 """
 
-__version__ = "2.2b1"
+__version__ = "2.2"
 
 import os
 import sys
@@ -384,7 +384,6 @@ def main():
                 device = Device(device_path, options.force, permissions)
             except IOError as ex:
                 # Ignore this device and turn to the next one
-                print "WARNING (%s): %s" % (device_path, str(ex))
                 continue
 
             if device.valid_nofs:
